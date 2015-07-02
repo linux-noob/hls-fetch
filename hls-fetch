@@ -24,6 +24,7 @@ use LWP::UserAgent;
 use JSON;
 use File::Temp qw(tempfile);
 use URI::URL;
+use File::Slurp qw(read_file);
 use constant READ_SIZE => 1024;
 
 my %opt = ('bandwidth' => 'max');
@@ -250,11 +251,17 @@ sub parse_m3u_attribs {
 
 sub fetch_url {
   my ($url, $filename) = @_;
-  if (defined $filename) {
+  if ($url !~ /\Ahttps?\:\/\//) {
+    my @data = read_file($url);
+    return undef unless @data;
+    return join "", @data;
+  }
+  elsif (defined $filename) {
     my $response = $browser->get($url, ":content_file" => $filename);
     die $response->status_line(), "\n" if !$response->is_success;
     return undef;
-  } else {
+  }
+  else {
     my $response = $browser->get($url);
     die $response->status_line(), "\n" if !$response->is_success;
     return $response->decoded_content();
