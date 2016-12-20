@@ -19,11 +19,9 @@
 
 use strict;
 use Getopt::Long;
-use HTML::Parser;
-use LWP::UserAgent;
-use JSON;
 use File::Temp qw(tempfile);
 use URI::URL;
+use File::Slurp qw(read_file);
 use constant READ_SIZE => 1024;
 
 my %opt = ('bandwidth' => 'max');
@@ -69,14 +67,14 @@ if (!exists $opt{'output'}) {
 }
 
 my ($url) = @ARGV;
-my $browser = LWP::UserAgent->new;
-$browser->cookie_jar({});
 
 my $video_file = $opt{'output'};
 die "$video_file: file exists, not overwriting without -f/--force\n" if !$opt{'force'} && -e $video_file;
 open(my $video_fh, '>', $video_file) || die "$video_file: cannot open file: $!\n";
 
 if ($opt{'svtplay'}) {
+  require HTML::Parser;
+  require JSON;
   my $data = eval { fetch_url($url) }; die "$url: cannot fetch page: $@" if $@;
   my $parser = HTML::Parser->new(api_version => 3, start_h => [\&handle_svtplay_tag, 'tagname,@attr']);
   my ($json_path, $json_title);
@@ -107,6 +105,7 @@ if ($opt{'svtplay'}) {
 }
 elsif ($opt{'embedded'}) {
   my $data = eval { fetch_url($url) }; die "$url: cannot fetch page: $@" if $@;
+  require HTML::Parser;
   my $parser = HTML::Parser->new(api_version => 3, start_h => [\&handle_playlist_tag, 'tagname,@attr']);
   my $index_url;
 
@@ -248,15 +247,30 @@ sub parse_m3u_attribs {
   return %attr;
 }
 
+my $browser;
 sub fetch_url {
   my ($url, $filename) = @_;
-  if (defined $filename) {
-    my $response = $browser->get($url, ":content_file" => $filename);
-    die $response->status_line(), "\n" if !$response->is_success;
-    return undef;
-  } else {
-    my $response = $browser->get($url);
-    die $response->status_line(), "\n" if !$response->is_success;
-    return $response->decoded_content();
+  if ($url !~ /\Ahttps?\:\/\//) {
+    my @data = read_file($url);
+    return undef unless @data;
+    return join "", @data;
+  }
+  else{
+    if (!$browser) {
+      require LWP::UserAgent;
+      $browser = LWP::UserAgent->new;
+      $browser->cookie_jar({});
+    }
+
+    if (defined $filename) {
+      my $response = $browser->get($url, ":content_file" => $filename);
+      die $response->status_line(), "\n" if !$response->is_success;
+      return undef;
+    }
+    else {
+      my $response = $browser->get($url);
+      die $response->status_line(), "\n" if !$response->is_success;
+      return $response->decoded_content();
+    }
   }
 }
